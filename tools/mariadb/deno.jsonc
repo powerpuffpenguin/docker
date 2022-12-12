@@ -1,0 +1,19 @@
+{
+    "compilerOptions": {
+      "checkJs": true
+    },
+    "tasks": {
+      "deps": "deno run -A deps.ts",
+      "run": "deno run --lock-write src/main.ts",
+      "test": "deno test --lock-write --fail-fast",
+      "bench": "deno bench --lock-write src/main.ts",
+      "cache": "deno cache --lock-write src/main.ts",
+      "reload": "deno cache --reload --lock-write src/main.ts",
+      "build":"deno bundle src/main.ts -- conf/main.js",
+      "up":"sudo docker-compose up -d",
+      "down":"sudo docker-compose down",
+      "logs":"sudo docker-compose logs",
+      "master":"sudo docker-compose exec db-master bash",
+      "init":"sudo docker run --rm -it king011/mariadb:10.10 bash"
+    }
+  }
