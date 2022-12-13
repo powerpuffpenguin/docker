@@ -1,6 +1,6 @@
 import { Command, Parser } from "./deps/flags/mod.ts";
 import { Master } from "./service/master.ts";
-
+import { Cron } from "./deps/croner/croner.js";
 const root = new Command({
   use: "main.ts",
   short: "mariadb docker tools",
@@ -40,6 +40,18 @@ const root = new Command({
       name: "no-ncat",
       usage: "not listen ncat",
     });
+    const backup = flags.string({
+      name: "backup",
+      usage: `backup cron "1 * * * *"`,
+      isValid: (v) => {
+        v = v.trim();
+        if (v == "") {
+          return true;
+        }
+        const c = new Cron(v);
+        return c.next() ? true : false;
+      },
+    });
     return () => {
       const srv = new Master({
         test: test.value,
@@ -47,6 +59,7 @@ const root = new Command({
         file: file.value,
         ncat: ncat.value,
         noncat: noncat.value,
+        backup: backup.value.trim(),
       });
       srv.serve();
     };

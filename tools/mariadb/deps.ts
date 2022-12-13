@@ -81,6 +81,13 @@ deps(
     ],
   ),
   define(
+    "croner",
+    "https://deno.land/x/croner@5.3.5/src",
+    [
+      "croner.js",
+    ],
+  ),
+  define(
     "luxon",
     "https://cdn.jsdelivr.net/npm/luxon@3.1.0/build/es6",
     [

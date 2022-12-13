@@ -23,8 +23,13 @@ export class Master extends Service {
       return;
     }
     try {
+      // 等待 mysql 就緒
       await this.waitMysqld();
+      // 創建 slave
       await this.createSlave();
+
+      // 執行備份
+      this.backup();
 
       let dely = 0;
       while (true) {

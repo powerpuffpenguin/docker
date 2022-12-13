@@ -1,6 +1,11 @@
 {
   "version": "2",
   "remote": {
+    "https://deno.land/x/croner@5.3.5/src/croner.js": "a7e06cd5c262c60bc9736d735eb65ae2e401eed3d965c467087a5a575abd8ec2",
+    "https://deno.land/x/croner@5.3.5/src/date.js": "e5bfdf17750207a00e1399c50bda7be8746429619c9f2fc0679c678aed22febc",
+    "https://deno.land/x/croner@5.3.5/src/helpers/minitz.js": "4326ef48b623925951a68756c89e9cfce33c5612ec55729e2013e8fdea4ecff4",
+    "https://deno.land/x/croner@5.3.5/src/options.js": "1c6fc9851d195cc94fdd06f947270aa25939eb34e47e03cb5e34f5451926f632",
+    "https://deno.land/x/croner@5.3.5/src/pattern.js": "e37c2047f04ba80311e5c1ea3764c10410760ad7ab40f669648a9533635982b5",
     "https://deno.land/x/easyts@0.1.0/async.ts": "3ba9a5e4a684ed44c510699e224ab786aff873365bc72cbd74a6ea92a0982bf2",
     "https://deno.land/x/easyts@0.1.0/exception.ts": "37225598f67368f9ccff34bd30946aedca48e4e70e293d62d759605216d67914",
     "https://deno.land/x/easyts@0.1.0/internal/decorator.ts": "8695942ba083319079fafb305500af8de514c4aadfc92067954dc23619d0a251",

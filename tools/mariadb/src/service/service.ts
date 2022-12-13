@@ -17,6 +17,16 @@ export interface ServiceOptions {
    * not run ncat listen
    */
   noncat?: boolean;
+
+  /**
+   * 執行備份的時間 cron
+   */
+  backup?: string;
+
+  /**
+   * 如果爲 true 立刻執行一次備份
+   */
+  backupNow?: boolean;
 }
 export interface Env {
   rootPassword: string;
@@ -145,5 +155,7 @@ server-id=${opts.id}
         mode: 0o664,
       },
     );
+  }
+  backup() {
   }
 }
