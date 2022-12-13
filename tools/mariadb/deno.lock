@@ -1,0 +1,27 @@
+{
+  "version": "2",
+  "remote": {
+    "https://deno.land/x/easyts@0.1.0/async.ts": "3ba9a5e4a684ed44c510699e224ab786aff873365bc72cbd74a6ea92a0982bf2",
+    "https://deno.land/x/easyts@0.1.0/exception.ts": "37225598f67368f9ccff34bd30946aedca48e4e70e293d62d759605216d67914",
+    "https://deno.land/x/easyts@0.1.0/internal/decorator.ts": "8695942ba083319079fafb305500af8de514c4aadfc92067954dc23619d0a251",
+    "https://deno.land/x/easyts@0.1.0/sync/mod.ts": "00cae6082f9650a9be3236d8c16bfeb282523775b43d12541697eab82d524928",
+    "https://deno.land/x/easyts@0.1.0/sync/mutex.ts": "a9ddba9bb3d954432aabef39b717e6750efd5111c6694f01855ac3ecb0156ce5",
+    "https://deno.land/x/easyts@0.1.0/sync/once.ts": "1014d7c1ae46c7b135ef0110b627f130b5aecf548c3b3da99347bf0d5e0981a7",
+    "https://deno.land/x/easyts@0.1.0/sync/rwmutex.ts": "075dcb4e007e1d67664cd012ecf1d971397fee32639e95d15bb5d523c45ebd13",
+    "https://deno.land/x/easyts@0.1.0/sync/waitgroup.ts": "8706369d986124bf451335afa6f9c689f48d7826e3b8acd8afb95819a94dd166",
+    "https://deno.land/x/easyts@0.1.0/types.ts": "f08f8e7bb3cadb0012bcf163c367ae46122f3e2d8a2db308dc0bd93242ae6597",
+    "https://deno.land/x/easyts@0.1.1/async.ts": "3ba9a5e4a684ed44c510699e224ab786aff873365bc72cbd74a6ea92a0982bf2",
+    "https://deno.land/x/easyts@0.1.1/exception.ts": "37225598f67368f9ccff34bd30946aedca48e4e70e293d62d759605216d67914",
+    "https://deno.land/x/easyts@0.1.1/internal/decorator.ts": "8695942ba083319079fafb305500af8de514c4aadfc92067954dc23619d0a251",
+    "https://deno.land/x/easyts@0.1.1/log/log.ts": "d6d7a3425e230d3b3916e9139689117c564ed1572db38a49c4f92cad4182889c",
+    "https://deno.land/x/easyts@0.1.1/log/logger.ts": "1186a42c0a3aeddb62e4ade4ef6a5e6c737de76af95c0294407b9d6bb6cd5891",
+    "https://deno.land/x/easyts@0.1.1/log/mod.ts": "ff7ce0f475a2cf191db8562bb1d6128b6872b5ead9478a2fe4411810072d6c05",
+    "https://deno.land/x/easyts@0.1.1/sync/mod.ts": "00cae6082f9650a9be3236d8c16bfeb282523775b43d12541697eab82d524928",
+    "https://deno.land/x/easyts@0.1.1/sync/mutex.ts": "a9ddba9bb3d954432aabef39b717e6750efd5111c6694f01855ac3ecb0156ce5",
+    "https://deno.land/x/easyts@0.1.1/sync/once.ts": "1014d7c1ae46c7b135ef0110b627f130b5aecf548c3b3da99347bf0d5e0981a7",
+    "https://deno.land/x/easyts@0.1.1/sync/rwmutex.ts": "075dcb4e007e1d67664cd012ecf1d971397fee32639e95d15bb5d523c45ebd13",
+    "https://deno.land/x/easyts@0.1.1/sync/waitgroup.ts": "8706369d986124bf451335afa6f9c689f48d7826e3b8acd8afb95819a94dd166",
+    "https://deno.land/x/easyts@0.1.1/types.ts": "f08f8e7bb3cadb0012bcf163c367ae46122f3e2d8a2db308dc0bd93242ae6597",
+    "https://deno.land/x/flags@0.0.3/mod.ts": "cd018a29ad97683ea674203c00a75144844a1f53169f923529eba70048825d9a"
+  }
+}

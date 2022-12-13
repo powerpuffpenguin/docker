@@ -55,15 +55,15 @@ async function deps(output: string, ...deps: Array<Dependency>) {
 deps(
   "src/deps",
   define("std", "https://deno.land/std@0.167.0", [
-    "log/mod.ts",
     "testing/asserts.ts",
   ]),
   define(
     "easyts",
-    "https://deno.land/x/easyts@0.1.0",
+    "https://deno.land/x/easyts@0.1.1",
     [
       "mod.ts",
       "log/mod.ts",
+      "sync/mod.ts",
     ],
   ),
   define(
