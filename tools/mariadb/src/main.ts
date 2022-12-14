@@ -1,6 +1,7 @@
 import { Command, Parser } from "./deps/flags/mod.ts";
 import { Master } from "./service/master.ts";
 import { Cron } from "./deps/croner/croner.js";
+import { backupCommand } from "./backup.ts";
 const root = new Command({
   use: "main.ts",
   short: "mariadb docker tools",
@@ -30,19 +31,17 @@ const root = new Command({
     const ncat = flags.number({
       name: "ncat",
       short: "n",
-      usage: "ncat listen port",
+      usage: "ncat listen port, if 0 not run ncat listen",
       default: 3307,
       isValid: (v) => {
-        return Number.isSafeInteger(v) && v > 0 && v < 65535;
+        return Number.isSafeInteger(v) && v >= 0 && v < 65535;
       },
-    });
-    const noncat = flags.bool({
-      name: "no-ncat",
-      usage: "not listen ncat",
     });
     const backup = flags.string({
       name: "backup",
-      usage: `backup cron "1 * * * *"`,
+      short: "b",
+      usage:
+        `backup cron "1 * * * *" (m h DofM M DofW), if empty not run backup cron`,
       isValid: (v) => {
         v = v.trim();
         if (v == "") {
@@ -52,17 +51,30 @@ const root = new Command({
         return c.next() ? true : false;
       },
     });
+    const backupNow = flags.bool({
+      name: "backup-now",
+      short: "B",
+      usage: `run a backup immediately`,
+    });
+    const output = flags.string({
+      name: "output",
+      short: "o",
+      default: "/backup",
+      usage: `backup output dir`,
+    });
     return () => {
       const srv = new Master({
         test: test.value,
         id: id.value,
         file: file.value,
         ncat: ncat.value,
-        noncat: noncat.value,
         backup: backup.value.trim(),
+        backupNow: backupNow.value,
+        output: output.value,
       });
       srv.serve();
     };
   },
 });
+root.add(backupCommand);
 new Parser(root).parse(Deno.args);

@@ -1,6 +1,8 @@
+import { Cron } from "../deps/croner/croner.js";
 import { log } from "../deps/easyts/log/mod.ts";
-export interface ServiceOptions {
-  test: boolean;
+import { Chan, ReadChannel } from "../deps/easyts/mod.ts";
+import { Backup, BackupOptions } from "./backup.ts";
+export interface ServiceOptions extends BackupOptions {
   /**
    * server-id
    */
@@ -13,10 +15,6 @@ export interface ServiceOptions {
    * ncat listen
    */
   ncat?: number;
-  /**
-   * not run ncat listen
-   */
-  noncat?: boolean;
 
   /**
    * 執行備份的時間 cron
@@ -113,8 +111,48 @@ export class Service {
   /**
    * 啓動完整備份
    */
-  async ncat(port: number) {
-    if (this.opts.noncat) {
+  async ncat(createSlave: boolean) {
+    const opts = this.opts;
+    const port = opts.ncat ?? 0;
+    if (port == 0) {
+      return;
+    }
+    try {
+      if (createSlave) {
+        await this.waitMysqld();
+        // 創建 slave
+        await this.createSlave();
+      }
+
+      let dely = 0;
+      while (true) {
+        try {
+          await this.waitMysqld();
+          await this._ncat(port);
+          dely = 0;
+          if (opts.test) {
+            break;
+          }
+        } catch (e) {
+          if (dely == 0) {
+            dely = 100;
+          } else {
+            dely *= 2;
+            if (dely > 5000) {
+              dely = 5000;
+            }
+          }
+          log.error(`ncat error:`, e, `, retry on ${dely}ms`);
+          await new Promise((resolve) => setTimeout(resolve, dely));
+        }
+      }
+    } catch (e) {
+      log.fail(e);
+      Deno.exit(1);
+    }
+  }
+  async _ncat(port: number) {
+    if (port == 0) {
       return;
     }
     log.info("ncat listen:", port);
@@ -157,5 +195,27 @@ server-id=${opts.id}
     );
   }
   backup() {
+    const opts = this.opts;
+    const cron = opts.backup ?? "";
+    if (cron == "") {
+      return;
+    }
+    log.info(`cron backup: "${cron}"`);
+    const c = new Chan<number>(1);
+    new Cron(cron, () => {
+      c.tryWrite(1);
+    });
+    this._backup(c);
+  }
+  private async _backup(c: ReadChannel<number>) {
+    const opts = this.opts;
+    const backup = new Backup(opts);
+    for await (const _ of c) {
+      try {
+        await backup.serve();
+      } catch (e) {
+        log.error("backup error:", e);
+      }
+    }
   }
 }
