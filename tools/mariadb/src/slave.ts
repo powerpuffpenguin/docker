@@ -1,11 +1,9 @@
-import { Command, Parser } from "./deps/flags/mod.ts";
-import { Master } from "./service/master.ts";
+import { Command } from "./deps/flags/mod.ts";
 import { Cron } from "./deps/croner/croner.js";
-import { backupCommand } from "./backup.ts";
-import { slaveCommand } from "./slave.ts";
-const root = new Command({
-  use: "main.ts",
-  short: "mariadb docker tools",
+import { Slave } from "./service/slave.ts";
+export const slaveCommand = new Command({
+  use: "slave",
+  short: "run slave",
   prepare(flags) {
     const test = flags.bool({
       name: "test",
@@ -16,7 +14,7 @@ const root = new Command({
       name: "id",
       short: "i",
       usage: "create server-id.cnf and write server-id",
-      default: 1,
+      default: 100,
       isValid: (v) => {
         return Number.isSafeInteger(v) && v >= 0;
       },
@@ -63,8 +61,14 @@ const root = new Command({
       default: "/backup",
       usage: `backup output dir`,
     });
+    const master = flags.string({
+      name: "master",
+      short: "m",
+      default: "db-master",
+      usage: `master address`,
+    });
     return () => {
-      const srv = new Master({
+      const srv = new Slave({
         test: test.value,
         id: id.value,
         file: file.value,
@@ -72,10 +76,9 @@ const root = new Command({
         backup: backup.value.trim(),
         backupNow: backupNow.value,
         output: output.value,
+        master: master.value,
       });
       srv.serve();
     };
   },
 });
-root.add(backupCommand, slaveCommand);
-new Parser(root).parse(Deno.args);

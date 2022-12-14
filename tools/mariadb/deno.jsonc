@@ -14,6 +14,7 @@
       "down":"sudo docker-compose down",
       "logs":"sudo docker-compose logs",
       "master":"sudo docker-compose exec db-master bash",
+      "backup":"sudo docker-compose exec db-backup bash",
       "init":"sudo docker run --rm -it king011/mariadb:10.10 bash"
     }
   }

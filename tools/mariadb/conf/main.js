@@ -3147,10 +3147,48 @@ Cron.prototype._next = function(prev) {
     }
 };
 Cron.Cron = Cron;
+class MutexException extends Exception {
+}
+class Mutex {
+    c_;
+    tryLock() {
+        if (!this.c_) {
+            this.c_ = new Completer();
+            return true;
+        }
+        return false;
+    }
+    lock() {
+        if (this.tryLock()) {
+            return;
+        }
+        return this._lock();
+    }
+    async _lock() {
+        let c = this.c_;
+        while(c){
+            await c.promise;
+            c = this.c_;
+        }
+        this.c_ = new Completer();
+        return this;
+    }
+    unlock() {
+        const c = this.c_;
+        if (c) {
+            this.c_ = undefined;
+            c.resolve();
+        } else {
+            throw new MutexException('unlock of unlocked mutex');
+        }
+    }
+}
 class Service {
     env_;
+    mutex_;
     constructor(opts){
         this.opts = opts;
+        this.mutex_ = new Mutex();
         this.env_ = {
             rootPassword: Deno.env.get("MYSQL_ROOT_PASSWORD"),
             slaveName: Deno.env.get("MYSQL_SLAVE_NAME"),
@@ -3169,6 +3207,9 @@ class Service {
     }
     bash(...strs) {
         const bash = strs.join("");
+        console.log("---------------");
+        console.log(bash);
+        console.log("---------------");
         return this.run({
             cmd: [
                 "bash",
@@ -3311,11 +3352,15 @@ server-id=${opts.id}
     async _backup(c) {
         const opts = this.opts;
         const backup = new Backup(opts);
+        const m = this.mutex_;
         for await (const _ of c){
             try {
+                await m.lock();
                 await backup.serve();
             } catch (e) {
                 log.error("backup error:", e);
+            } finally{
+                m.unlock();
             }
         }
     }
@@ -3370,6 +3415,195 @@ const backupCommand = new Command({
                 log.error(e);
                 Deno.exit(1);
             }
+        };
+    }
+});
+class Slave extends Service {
+    async serve() {
+        try {
+            await this.writeServerID();
+            await this._clone();
+            const p = this.runMysqd();
+            this._serve();
+            const s = await p?.status();
+            if (s && !s.success) {
+                throw new Error("runMysqd not success");
+            }
+        } catch (e) {
+            log.fail(e);
+            Deno.exit(1);
+        }
+    }
+    async _serve() {
+        const opts = this.opts;
+        if (opts.backupNow) {
+            await new Backup(opts).serve();
+        }
+        await this._slave();
+        this.ncat(false);
+        this.backup();
+    }
+    async _slave() {
+        const opts = this.opts;
+        console.log(`-------------------------------${opts.master}`);
+        const p = this.bash(`#!/bin/bash
+set -ex
+
+echo "Waiting for mysqld to be ready (accepting connections)"
+until mysql -h 127.0.0.1 --user=root --password="$MYSQL_ROOT_PASSWORD" -e "SELECT 1"; do sleep 1; done
+
+cd /var/lib/mysql
+
+# Determine binlog position of cloned data, if any.
+if [[ -f xtrabackup_slave_info && "x$(<xtrabackup_slave_info)" != "x" ]]; then
+    # XtraBackup already generated a partial "CHANGE MASTER TO" query
+    # because we're cloning from an existing slave. (Need to remove the tailing semicolon!)
+    cat xtrabackup_slave_info | sed -E 's/;$//g' > change_master_to.sql.in
+    # Ignore xtrabackup_binlog_info in this case (it's useless).
+    rm -f xtrabackup_slave_info xtrabackup_binlog_info
+elif [[ -f xtrabackup_binlog_info ]]; then
+    # We're cloning directly from master. Parse binlog position.
+    [[ \`cat xtrabackup_binlog_info\` =~ ^([[:alnum:]_\.\-]*?)[[:space:]]+([[:digit:]]*?)(.*?)$ ]] || exit 1
+    rm -f xtrabackup_binlog_info xtrabackup_slave_info
+    echo "CHANGE MASTER TO MASTER_LOG_FILE='\${BASH_REMATCH[1]}',\
+        MASTER_LOG_POS=\${BASH_REMATCH[2]}" > change_master_to.sql.in
+fi
+# Check if we need to complete a clone by starting replication.
+if [[ -f change_master_to.sql.in ]]; then
+    echo "Initializing replication from clone position"
+    mysql -h 127.0.0.1 --user=root --password="$MYSQL_ROOT_PASSWORD" \
+        -e "$(<change_master_to.sql.in), \
+                MASTER_HOST='` + opts.master + `', \
+                MASTER_USER='$MYSQL_SLAVE_NAME', \
+                MASTER_PASSWORD='$MYSQL_SLAVE_PASSWORD', \
+                MASTER_CONNECT_RETRY=10; \
+                START SLAVE;" || exit 1
+    # In case of container restart, attempt this at-most-once.
+    mv change_master_to.sql.in change_master_to.sql.orig
+fi`);
+        if (p) {
+            const s = await p.status();
+            if (!s.success) {
+                throw new Error(`slave error: ${s.code}`);
+            }
+        }
+    }
+    async _clone() {
+        const opts = this.opts;
+        const p = this.bash(`#!/bin/bash
+set -ex
+
+# Check ready
+if [[ -f /var/lib/mysql/success-mariabackup ]]; then
+    exit 0
+fi
+# Check prepare fault
+if [[ -f /var/lib/mysql/do-mariabackup ]]; then
+    rm /var/lib/mysql/* -rf
+fi
+
+# Download full backup
+if [[ ! -f /var/lib/mysql/success-ncat ]]; then
+    rm /var/lib/mysql/* -rf
+    ncat --recv-only ${opts.master} 3307 | mbstream -x -C /var/lib/mysql
+    if [[ -d /var/lib/mysql/mysql ]]; then
+        touch /var/lib/mysql/success-ncat
+    else
+        echo ncat not data
+        exit 1
+    fi
+fi
+
+# Prepare the backup
+touch /var/lib/mysql/do-mariabackup
+mariabackup --prepare --target-dir=/var/lib/mysql
+touch /var/lib/mysql/success-mariabackup
+`);
+        if (p) {
+            const s = await p.status();
+            if (!s.success) {
+                throw new Error(`clone error: ${s.code}`);
+            }
+        }
+    }
+}
+const slaveCommand = new Command({
+    use: "slave",
+    short: "run slave",
+    prepare (flags) {
+        const test = flags.bool({
+            name: "test",
+            short: "t",
+            usage: "output execute command, but not execute"
+        });
+        const id = flags.number({
+            name: "id",
+            short: "i",
+            usage: "create server-id.cnf and write server-id",
+            default: 100,
+            isValid: (v)=>{
+                return Number.isSafeInteger(v) && v >= 0;
+            }
+        });
+        const file = flags.string({
+            name: "file",
+            usage: "server-id file name",
+            default: "server-id.cnf",
+            isValid: (v)=>{
+                return v.indexOf("/") < 0 || v.indexOf("\\") < 0;
+            }
+        });
+        const ncat = flags.number({
+            name: "ncat",
+            short: "n",
+            usage: "ncat listen port, if 0 not run ncat listen",
+            default: 3307,
+            isValid: (v)=>{
+                return Number.isSafeInteger(v) && v >= 0 && v < 65535;
+            }
+        });
+        const backup = flags.string({
+            name: "backup",
+            short: "b",
+            usage: `backup cron "1 * * * *" (m h DofM M DofW), if empty not run backup cron`,
+            isValid: (v)=>{
+                v = v.trim();
+                if (v == "") {
+                    return true;
+                }
+                const c = new Cron(v);
+                return c.next() ? true : false;
+            }
+        });
+        const backupNow = flags.bool({
+            name: "backup-now",
+            short: "B",
+            usage: `run a backup immediately`
+        });
+        const output = flags.string({
+            name: "output",
+            short: "o",
+            default: "/backup",
+            usage: `backup output dir`
+        });
+        const master = flags.string({
+            name: "master",
+            short: "m",
+            default: "db-master",
+            usage: `master address`
+        });
+        return ()=>{
+            const srv = new Slave({
+                test: test.value,
+                id: id.value,
+                file: file.value,
+                ncat: ncat.value,
+                backup: backup.value.trim(),
+                backupNow: backupNow.value,
+                output: output.value,
+                master: master.value
+            });
+            srv.serve();
         };
     }
 });
@@ -3446,5 +3680,5 @@ const root = new Command({
         };
     }
 });
-root.add(backupCommand);
+root.add(backupCommand, slaveCommand);
 new Parser(root).parse(Deno.args);

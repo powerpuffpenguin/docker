@@ -2,6 +2,7 @@ import { Cron } from "../deps/croner/croner.js";
 import { log } from "../deps/easyts/log/mod.ts";
 import { Chan, ReadChannel } from "../deps/easyts/mod.ts";
 import { Backup, BackupOptions } from "./backup.ts";
+import { Mutex } from "../deps/easyts/sync/mod.ts";
 export interface ServiceOptions extends BackupOptions {
   /**
    * server-id
@@ -25,6 +26,11 @@ export interface ServiceOptions extends BackupOptions {
    * 如果爲 true 立刻執行一次備份
    */
   backupNow?: boolean;
+
+  /**
+   * master 地址
+   */
+  master?: string;
 }
 export interface Env {
   rootPassword: string;
@@ -33,6 +39,7 @@ export interface Env {
 }
 export class Service {
   protected env_: Env;
+  protected mutex_ = new Mutex();
   constructor(readonly opts: ServiceOptions) {
     this.env_ = {
       rootPassword: Deno.env.get("MYSQL_ROOT_PASSWORD")!,
@@ -210,11 +217,15 @@ server-id=${opts.id}
   private async _backup(c: ReadChannel<number>) {
     const opts = this.opts;
     const backup = new Backup(opts);
+    const m = this.mutex_;
     for await (const _ of c) {
       try {
+        await m.lock();
         await backup.serve();
       } catch (e) {
         log.error("backup error:", e);
+      } finally {
+        m.unlock();
       }
     }
   }

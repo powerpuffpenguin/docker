@@ -1,5 +1,5 @@
 import { log } from "./deps/easyts/log/mod.ts";
-import { Command, Flags } from "./deps/flags/mod.ts";
+import { Command } from "./deps/flags/mod.ts";
 import { Backup } from "./service/backup.ts";
 
 export const backupCommand = new Command({
