@@ -18,6 +18,7 @@ export class Dockerfile {
     }
     return template.render(source, data);
   }
+  async prepare(_: string) {}
 }
 export interface DockerOptions {
   name: string;
@@ -64,7 +65,6 @@ export class Docker {
     const str = v.string({
       version: v.version,
     });
-    console.log(str);
     if (opts?.test) {
       return;
     }
@@ -73,6 +73,7 @@ export class Docker {
     const cwd = "build";
     await Deno.mkdir(`${cwd}`, { recursive: true });
     await Deno.writeTextFile(`${cwd}/Dockerfile`, str);
+    await v.prepare(cwd);
 
     const cmd = [
       "sudo",
@@ -88,6 +89,43 @@ export class Docker {
     const p = await Deno.run({
       cmd: cmd,
       cwd: cwd,
+    });
+    await p.status();
+  }
+  async push(opts?: BuildOptions) {
+    const name = `${opts?.prefix ?? ""}${this.name}`;
+    const versions = this.versions;
+    if (versions.length == 0) {
+      return;
+    }
+
+    log.info(`push ${name}`);
+    if (opts?.latest) {
+      const v = versions[versions.length - 1];
+      await this._push(opts, v);
+    } else {
+      for (const v of versions) {
+        await this._push(opts, v);
+      }
+    }
+  }
+  private async _push(opts: undefined | BuildOptions, v: Dockerfile) {
+    log.info(` - ${v.version}`);
+    if (opts?.test) {
+      return;
+    }
+    const name = `${opts?.prefix ?? ""}${this.name}`;
+    const tag = `${name}:${v.version}`;
+
+    const cmd = [
+      "sudo",
+      "docker",
+      "push",
+      tag,
+    ];
+    log.info(cmd);
+    const p = await Deno.run({
+      cmd: cmd,
     });
     await p.status();
   }

@@ -56,5 +56,57 @@ const root = new Command({
     };
   },
 });
-
+root.add(
+  new Command({
+    use: "push",
+    short: "docker push",
+    long: "docker push\n\ndeno run -A main.ts push " +
+      dockers.map((v) => v.command).join(" "),
+    prepare(flags, _) {
+      const test = flags.bool({
+        name: "test",
+        short: "t",
+        usage: "test push",
+      });
+      const all = flags.bool({
+        name: "all",
+        short: "a",
+        usage: "build all",
+      });
+      const latest = flags.bool({
+        name: "latest",
+        short: "l",
+        usage: "only build latest",
+      });
+      const prefix = flags.string({
+        name: "prefix",
+        usage: "tag prefix",
+        default: "king011/",
+      });
+      const exec = (docker: Docker) => {
+        docker.push({
+          prefix: prefix.value,
+          test: test.value,
+          latest: latest.value,
+        });
+      };
+      return (args) => {
+        if (all.value) {
+          for (const docker of dockers) {
+            exec(docker);
+          }
+        } else {
+          for (const arg of args) {
+            for (const docker of dockers) {
+              if (docker.command == arg) {
+                exec(docker);
+                break;
+              }
+            }
+          }
+        }
+      };
+    },
+  }),
+);
 new Parser(root).parse(Deno.args);

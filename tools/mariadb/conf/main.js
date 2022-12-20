@@ -2047,9 +2047,10 @@ fi`);
 }
 async function watchSlave(user, password, s) {
     while(true){
-        const [errno, text] = await _watchSlave(user, password);
+        const [errno, ioerrno] = await _watchSlave(user, password);
         if (errno == 1062 || errno == 1032 || errno == 1146 || errno == 1594) {
-            console.log(text);
+            break;
+        } else if (ioerrno == 1236) {
             break;
         }
         await new Promise((resolve)=>setTimeout(resolve, s * 1000));
@@ -2068,24 +2069,26 @@ async function _watchSlave(user, password) {
         stdout: "piped"
     });
     await p.status();
-    const tag = "Last_Errno:";
     const text = new TextDecoder().decode(await p.output());
+    return [
+        _getNumber(text, "Last_Errno"),
+        _getNumber(text, "Last_IO_Errno")
+    ];
+}
+function _getNumber(text, tag) {
     const str = _get(text, tag);
     const errno = parseInt(str);
     if (!Number.isSafeInteger(errno)) {
-        throw new Error(`unknow errno: ${str}`);
+        throw new Error(`unknow ${tag}: ${str}`);
     }
-    return [
-        errno,
-        text
-    ];
+    return errno;
 }
 function _get(text, tag) {
-    let i = text.indexOf(tag);
+    let i = text.indexOf(tag + ":");
     if (i == -1) {
         throw new Error(`not found tag: ${tag}`);
     }
-    let str = text.substring(i + tag.length);
+    let str = text.substring(i + tag.length + 1);
     i = str.indexOf("\n");
     if (i > -1) {
         str = str.substring(0, i);

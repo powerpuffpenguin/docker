@@ -172,14 +172,17 @@ fi`,
 }
 export async function watchSlave(user: string, password: string, s: number) {
   while (true) {
-    const [errno, text] = await _watchSlave(user, password);
+    const [errno, ioerrno] = await _watchSlave(user, password);
     if (
       errno == 1062 || // 主鍵衝突
       errno == 1032 || // 記錄未找到
       errno == 1146 || // 表未找到
       errno == 1594 // 讀取日誌錯誤
     ) {
-      console.log(text);
+      break;
+    } else if (
+      ioerrno == 1236 // 無法讀取日誌
+    ) {
       break;
     }
 
@@ -199,21 +202,23 @@ async function _watchSlave(user: string, password: string) {
     stdout: "piped",
   });
   await p.status();
-  const tag = "Last_Errno:";
   const text = new TextDecoder().decode(await p.output());
+  return [_getNumber(text, "Last_Errno"), _getNumber(text, "Last_IO_Errno")];
+}
+function _getNumber(text: string, tag: string) {
   const str = _get(text, tag);
   const errno = parseInt(str);
   if (!Number.isSafeInteger(errno)) {
-    throw new Error(`unknow errno: ${str}`);
+    throw new Error(`unknow ${tag}: ${str}`);
   }
-  return [errno, text];
+  return errno;
 }
 function _get(text: string, tag: string): string {
-  let i = text.indexOf(tag);
+  let i = text.indexOf(tag + ":");
   if (i == -1) {
     throw new Error(`not found tag: ${tag}`);
   }
-  let str = text.substring(i + tag.length);
+  let str = text.substring(i + tag.length + 1);
   i = str.indexOf("\n");
   if (i > -1) {
     str = str.substring(0, i);

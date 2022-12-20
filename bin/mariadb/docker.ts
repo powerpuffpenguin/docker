@@ -31,6 +31,10 @@ RUN set -eux;  \\
     curl -#Lo /a.zip ${this.deno}; \\
     unzip /a.zip -d /usr/bin/;  \\
     rm /a.zip;
+COPY main.js /main.js
 `);
+  }
+  prepare(dir: string) {
+    return Deno.copyFile("tools/mariadb/conf/main.js", `${dir}/main.js`);
   }
 }
