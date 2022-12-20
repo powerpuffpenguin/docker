@@ -7,8 +7,8 @@ const TagCompleted = `${Tag}completed`;
 function dateNow(): string {
   const d = new Date();
   return `${d.getFullYear().toString()}-${
-    d.getMonth().toString().padStart(2, "0")
-  }-${d.getDay().toString().padStart(2, "0")}`;
+    (d.getMonth() + 1).toString().padStart(2, "0")
+  }-${d.getDate().toString().padStart(2, "0")}`;
 }
 const match = /^[0-9]+\.[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
 async function fileExists(filepath: string): Promise<boolean> {

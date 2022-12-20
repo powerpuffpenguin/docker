@@ -1032,7 +1032,7 @@ const TagOK = `${Tag}ok`;
 const TagCompleted = `${Tag}completed`;
 function dateNow() {
     const d = new Date();
-    return `${d.getFullYear().toString()}-${d.getMonth().toString().padStart(2, "0")}-${d.getDay().toString().padStart(2, "0")}`;
+    return `${d.getFullYear().toString()}-${(d.getMonth() + 1).toString().padStart(2, "0")}-${d.getDate().toString().padStart(2, "0")}`;
 }
 const match = /^[0-9]+\.[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
 async function fileExists(filepath) {
@@ -1234,11 +1234,16 @@ class Target {
             cmds.push("--incremental-basedir", joinPath(this.path, last.name));
         }
         log.info("mariabackup", cmds);
-        const s = await Deno.run({
+        const p = Deno.run({
             cmd: cmds
-        }).status();
-        if (!s.success) {
-            throw new Error(`mariabackup errpr: ${s.code}`);
+        });
+        try {
+            const s = await p.status();
+            if (!s.success) {
+                throw new Error(`mariabackup errpr: ${s.code}`);
+            }
+        } finally{
+            p.close();
         }
         const checkpoints = await Checkpoints.load(joinPath(path, "xtrabackup_checkpoints"));
         if (last) {
@@ -1909,21 +1914,35 @@ server-id=${id}
 }
 async function waitMysqld(user, password) {
     log.info("wait mysqld");
+    while(true){
+        const s = await runProcess("mysql", "-h", "127.0.0.1", "--user", user, "--password=" + password, "-e", "SELECT 1");
+        if (s.success) {
+            break;
+        }
+        await new Promise((resolve)=>setTimeout(resolve, 1000));
+    }
+}
+function ncat(port, user, password) {
+    log.info("ncat listen:", port);
+    return runProcess("gosu", "mysql", "ncat", "--listen", "--keep-open", "--send-only", "--max-conns=1", port.toString(), "-c", `mariabackup --backup --slave-info --stream=xbstream --host=127.0.0.1 --user='${user}' --password='${password}'`);
+}
+async function runProcess(...cmd) {
+    log.debug("run", cmd);
     const p = Deno.run({
-        cmd: [
-            "bash",
-            "-c",
-            `until mysql -h 127.0.0.1 --user="${user}" --password="${password}" -e "SELECT 1"; do sleep 1; done`
-        ]
+        cmd: cmd
     });
     try {
         const s = await p.status();
-        if (!s.success) {
-            throw new Error("waitMysqld not success");
-        }
+        return s;
     } finally{
         p.close();
     }
+}
+function createSlave(user, password, slaveName, slavePassword) {
+    log.info(`create slave: name=${slaveName} password=${slavePassword}`);
+    return runProcess("mysql", "-h", "127.0.0.1", "--user", user, `--password=${password}`, "-e", `CREATE USER IF NOT EXISTS '${slaveName}'@'%' IDENTIFIED BY '${slavePassword}';
+GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO '${slaveName}'@'%';
+FLUSH PRIVILEGES;`);
 }
 function throwType(val, typeName) {
     if (val.message !== undefined) {
@@ -3305,15 +3324,18 @@ class Service {
         this._mysqld();
         await this._setting();
         const opts = this.opts;
-        console.log(opts.backupCron);
         if (opts.backupNow) {
             const backup = await this.backup();
             await backup.create();
         }
         if (opts.backupCron) {
+            log.info("backup cron", opts.backupCron);
             const ch = new Chan(1);
             new Cron(opts.backupCron, ()=>ch.tryWrite(1));
             this._backup(ch);
+        }
+        if (opts.ncat > 0) {
+            ncat(opts.ncat, opts.root, opts.rootPassword);
         }
         if (opts.master != "") {}
     }
@@ -3387,6 +3409,11 @@ class Service {
     async _setting() {
         const opts = this.opts;
         await waitMysqld(opts.root, opts.rootPassword);
+        if (opts.master == "") {
+            if (opts.slave != "" && opts.slavePassword != "") {
+                await createSlave(opts.root, opts.rootPassword, opts.slave, opts.slavePassword);
+            }
+        } else {}
     }
 }
 const root = new Command({

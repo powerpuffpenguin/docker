@@ -1,6 +1,12 @@
 import { Cron } from "../../src0/deps/croner/croner.js";
 import { log } from "../deps/easyts/log/mod.ts";
-import { waitMysqld, writeServerID } from "../utils/utils.ts";
+import {
+  createSlave,
+  ncat,
+  runProcess,
+  waitMysqld,
+  writeServerID,
+} from "../utils/utils.ts";
 import { Backup } from "./backup.ts";
 import { Chan, Completer, ReadChannel } from "../deps/easyts/mod.ts";
 import { Mutex } from "../deps/easyts/sync/mod.ts";
@@ -122,6 +128,9 @@ export class Service {
       new Cron(opts.backupCron, () => ch.tryWrite(1));
       this._backup(ch);
     }
+    if (opts.ncat > 0) {
+      ncat(opts.ncat, opts.root, opts.rootPassword);
+    }
 
     if (opts.master != "") { // 監控 slave 錯誤
       // const p = this.process_!;
@@ -130,6 +139,7 @@ export class Service {
       //      this._reset = true;
     }
   }
+
   private async _backup(ch: ReadChannel<number>) {
     const locker = this.locker_;
     for await (const _ of ch) {
@@ -198,5 +208,18 @@ export class Service {
   private async _setting() {
     const opts = this.opts;
     await waitMysqld(opts.root, opts.rootPassword);
+
+    if (opts.master == "") { // master
+      // 創建 slave 用戶
+      if (opts.slave != "" && opts.slavePassword != "") {
+        await createSlave(
+          opts.root,
+          opts.rootPassword,
+          opts.slave,
+          opts.slavePassword,
+        );
+      }
+    } else { // slave
+    }
   }
 }
