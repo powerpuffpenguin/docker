@@ -1,10 +1,13 @@
-import { Cron } from "../../src0/deps/croner/croner.js";
+import { Cron } from "../deps/croner/croner.js";
 import { log } from "../deps/easyts/log/mod.ts";
 import {
+  cloneDB,
   createSlave,
   ncat,
   runProcess,
+  startSlave,
   waitMysqld,
+  watchSlave,
   writeServerID,
 } from "../utils/utils.ts";
 import { Backup } from "./backup.ts";
@@ -21,6 +24,11 @@ interface Options {
    * master 地址，表示自己爲 slave，如果 爲空字符串則表示自己是 master
    */
   master: string;
+  /**
+   * 設置 從 master 的 ncat 端口 clone 數據
+   */
+  masterNcat: number;
+
   /**
    * ncat 端口
    */
@@ -62,8 +70,19 @@ export class Service {
     const slavePassword = env.get("MYSQL_SLAVE_PASSWORD") ?? "";
 
     const master = env.get("MASTER_ADDR")?.toLowerCase() ?? "";
+    let str = env.get("MASTER_NCAT") ?? "3307";
+    let masterNcat = 0;
+    if (str != "") {
+      masterNcat = parseInt(str);
+      if (
+        !Number.isSafeInteger(masterNcat) || masterNcat < 1 ||
+        masterNcat > 65535
+      ) {
+        throw new Error(`not supported master ncat port: ${str}`);
+      }
+    }
 
-    let str = env.get("NCAT_PORT") ?? "";
+    str = env.get("NCAT_PORT") ?? "";
     let ncat = 0;
     if (str != "") {
       ncat = parseInt(str);
@@ -102,6 +121,7 @@ export class Service {
       slavePassword: slavePassword,
       serverID: BigInt(env.get("SERVER_ID") ?? "0"),
       master: master,
+      masterNcat: masterNcat,
       backupCron: backupCron,
       backupNow: env.get("BACKUP_NOW") === "1",
       backupFull: backupFull,
@@ -133,10 +153,28 @@ export class Service {
     }
 
     if (opts.master != "") { // 監控 slave 錯誤
-      // const p = this.process_!;
-      // this.process_ = undefined;
-      // p.kill();
-      //      this._reset = true;
+      // 監聽同步錯誤
+      await watchSlave(opts.root, opts.rootPassword, 60);
+
+      await this.locker_.lock();
+      // 關閉進程
+      const p = this.process_!;
+      this.process_ = undefined;
+      p.kill();
+      await this.done_.wait();
+
+      const backup = await this.backup();
+      await backup.complete();
+
+      // 記錄錯誤
+      const f = await Deno.open("/var/lib/mysql/slave_error", {
+        mode: 0o664,
+        create: true,
+        write: true,
+      });
+      f.close();
+
+      Deno.exit(1);
     }
   }
 
@@ -180,6 +218,7 @@ export class Service {
     return c.promise;
   }
   private process_?: Deno.Process;
+  private done_ = new Chan<void>();
   async _mysqld() {
     log.info("run mariadbd");
     const p = Deno.run({
@@ -195,6 +234,7 @@ export class Service {
       throw e;
     } finally {
       p.close();
+      this.done_.close();
     }
   }
   private async _prepare() {
@@ -203,6 +243,7 @@ export class Service {
       await writeServerID(opts.serverID);
     }
     if (opts.master != "") { // 從庫從主庫拷貝
+      await cloneDB(opts.master, opts.masterNcat);
     }
   }
   private async _setting() {
@@ -220,6 +261,7 @@ export class Service {
         );
       }
     } else { // slave
+      await startSlave(opts.master, opts.root, opts.rootPassword);
     }
   }
 }

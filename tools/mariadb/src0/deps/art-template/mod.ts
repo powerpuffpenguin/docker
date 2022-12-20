@@ -1,1 +1,0 @@
-export { default } from "npm:art-template@^4.13.2";

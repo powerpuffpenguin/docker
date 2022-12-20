@@ -1155,6 +1155,17 @@ class Backup {
         await target.create(opts.user, opts.password);
         await this.delete();
     }
+    async complete() {
+        const targets = this.targets_;
+        if (targets.length == 0) {
+            return;
+        }
+        const target = targets[targets.length - 1];
+        if (target.completed) {
+            return;
+        }
+        await target.complete();
+    }
     opts;
 }
 class Target {
@@ -1266,6 +1277,18 @@ class Target {
             name: name,
             checkpoints: checkpoints
         });
+    }
+    async complete() {
+        if (this.completed) {
+            throw new Error(`target already completed: ${this.path}`);
+        }
+        const f = await Deno.open(joinPath(this.path, TagCompleted), {
+            mode: 0o664,
+            create: true,
+            write: true
+        });
+        f.close();
+        this.completed = true;
     }
     id;
     name;
@@ -1938,11 +1961,136 @@ async function runProcess(...cmd) {
         p.close();
     }
 }
-function createSlave(user, password, slaveName, slavePassword) {
+async function createSlave(user, password, slaveName, slavePassword) {
     log.info(`create slave: name=${slaveName} password=${slavePassword}`);
-    return runProcess("mysql", "-h", "127.0.0.1", "--user", user, `--password=${password}`, "-e", `CREATE USER IF NOT EXISTS '${slaveName}'@'%' IDENTIFIED BY '${slavePassword}';
+    const s = await runProcess("mysql", "-h", "127.0.0.1", "--user", user, `--password=${password}`, "-e", `CREATE USER IF NOT EXISTS '${slaveName}'@'%' IDENTIFIED BY '${slavePassword}';
 GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO '${slaveName}'@'%';
 FLUSH PRIVILEGES;`);
+    if (!s.success) {
+        throw new Error(`create slave fail`);
+    }
+}
+async function cloneDB(addr, port) {
+    const s = await runProcess("bash", "-c", `set -ex
+
+if [[ -f /var/lib/mysql/slave_error ]]; then
+  rm /var/lib/mysql/* -rf
+fi
+
+# Check ready
+if [[ -f /var/lib/mysql/success-mariabackup ]]; then
+    exit 0
+fi
+# Check prepare fault
+if [[ -f /var/lib/mysql/do-mariabackup ]]; then
+    rm /var/lib/mysql/* -rf
+fi
+
+# Download full backup
+if [[ ! -f /var/lib/mysql/success-ncat ]]; then
+    rm /var/lib/mysql/* -rf
+    ncat --recv-only '${addr}' ${port} | mbstream -x -C /var/lib/mysql
+    if [[ -d /var/lib/mysql/mysql ]]; then
+        touch /var/lib/mysql/success-ncat
+    else
+        echo ncat not data
+        exit 1
+    fi
+fi
+
+# Prepare the backup
+touch /var/lib/mysql/do-mariabackup
+mariabackup --prepare --target-dir=/var/lib/mysql
+touch /var/lib/mysql/success-mariabackup`);
+    if (!s.success) {
+        throw new Error(`cloneDB fail`);
+    }
+}
+async function startSlave(addr, user, password) {
+    const s = await runProcess("bash", "-c", `set -ex
+
+echo "Waiting for mysqld to be ready (accepting connections)"
+until mysql -h 127.0.0.1 --user="${user}" --password="${password}" -e "SELECT 1"; do sleep 1; done
+
+cd /var/lib/mysql
+
+# Determine binlog position of cloned data, if any.
+if [[ -f xtrabackup_slave_info && "x$(<xtrabackup_slave_info)" != "x" ]]; then
+    # XtraBackup already generated a partial "CHANGE MASTER TO" query
+    # because we're cloning from an existing slave. (Need to remove the tailing semicolon!)
+    cat xtrabackup_slave_info | sed -E 's/;$//g' > change_master_to.sql.in
+    # Ignore xtrabackup_binlog_info in this case (it's useless).
+    rm -f xtrabackup_slave_info xtrabackup_binlog_info
+elif [[ -f xtrabackup_binlog_info ]]; then
+    # We're cloning directly from master. Parse binlog position.
+    [[ \`cat xtrabackup_binlog_info\` =~ ^([[:alnum:]_\.\-]*?)[[:space:]]+([[:digit:]]*?)(.*?)$ ]] || exit 1
+    rm -f xtrabackup_binlog_info xtrabackup_slave_info
+    echo "CHANGE MASTER TO MASTER_LOG_FILE='\${BASH_REMATCH[1]}',\
+        MASTER_LOG_POS=\${BASH_REMATCH[2]}" > change_master_to.sql.in
+fi
+# Check if we need to complete a clone by starting replication.
+if [[ -f change_master_to.sql.in ]]; then
+    echo "Initializing replication from clone position"
+    mysql -h 127.0.0.1 --user="${user}" --password="${password}" \
+        -e "$(<change_master_to.sql.in), \
+                MASTER_HOST='${addr}', \
+                MASTER_USER='$MYSQL_SLAVE_NAME', \
+                MASTER_PASSWORD='$MYSQL_SLAVE_PASSWORD', \
+                MASTER_CONNECT_RETRY=10; \
+                START SLAVE;" || exit 1
+    # In case of container restart, attempt this at-most-once.
+    mv change_master_to.sql.in change_master_to.sql.orig
+fi`);
+    if (!s.success) {
+        throw new Error(`startSlave fail`);
+    }
+}
+async function watchSlave(user, password, s) {
+    while(true){
+        const [errno, text] = await _watchSlave(user, password);
+        if (errno == 1062 || errno == 1032 || errno == 1146 || errno == 1594) {
+            console.log(text);
+            break;
+        }
+        await new Promise((resolve)=>setTimeout(resolve, s * 1000));
+    }
+}
+async function _watchSlave(user, password) {
+    const p = Deno.run({
+        cmd: [
+            "mysql",
+            "--user",
+            user,
+            "--password=" + password,
+            "-e",
+            "show slave status\\G"
+        ],
+        stdout: "piped"
+    });
+    await p.status();
+    const tag = "Last_Errno:";
+    const text = new TextDecoder().decode(await p.output());
+    const str = _get(text, tag);
+    const errno = parseInt(str);
+    if (!Number.isSafeInteger(errno)) {
+        throw new Error(`unknow errno: ${str}`);
+    }
+    return [
+        errno,
+        text
+    ];
+}
+function _get(text, tag) {
+    let i = text.indexOf(tag);
+    if (i == -1) {
+        throw new Error(`not found tag: ${tag}`);
+    }
+    let str = text.substring(i + tag.length);
+    i = str.indexOf("\n");
+    if (i > -1) {
+        str = str.substring(0, i);
+    }
+    return str.trim();
 }
 function throwType(val, typeName) {
     if (val.message !== undefined) {
@@ -3273,7 +3421,15 @@ class Service {
         const slave = env.get("MYSQL_SLAVE_NAME") ?? "";
         const slavePassword = env.get("MYSQL_SLAVE_PASSWORD") ?? "";
         const master = env.get("MASTER_ADDR")?.toLowerCase() ?? "";
-        let str = env.get("NCAT_PORT") ?? "";
+        let str = env.get("MASTER_NCAT") ?? "3307";
+        let masterNcat = 0;
+        if (str != "") {
+            masterNcat = parseInt(str);
+            if (!Number.isSafeInteger(masterNcat) || masterNcat < 1 || masterNcat > 65535) {
+                throw new Error(`not supported master ncat port: ${str}`);
+            }
+        }
+        str = env.get("NCAT_PORT") ?? "";
         let ncat = 0;
         if (str != "") {
             ncat = parseInt(str);
@@ -3311,6 +3467,7 @@ class Service {
             slavePassword: slavePassword,
             serverID: BigInt(env.get("SERVER_ID") ?? "0"),
             master: master,
+            masterNcat: masterNcat,
             backupCron: backupCron,
             backupNow: env.get("BACKUP_NOW") === "1",
             backupFull: backupFull,
@@ -3337,7 +3494,23 @@ class Service {
         if (opts.ncat > 0) {
             ncat(opts.ncat, opts.root, opts.rootPassword);
         }
-        if (opts.master != "") {}
+        if (opts.master != "") {
+            await watchSlave(opts.root, opts.rootPassword, 60);
+            await this.locker_.lock();
+            const p = this.process_;
+            this.process_ = undefined;
+            p.kill();
+            await this.done_.wait();
+            const backup1 = await this.backup();
+            await backup1.complete();
+            const f = await Deno.open("/var/lib/mysql/slave_error", {
+                mode: 0o664,
+                create: true,
+                write: true
+            });
+            f.close();
+            Deno.exit(1);
+        }
     }
     async _backup(ch) {
         const locker = this.locker_;
@@ -3379,6 +3552,7 @@ class Service {
         return c.promise;
     }
     process_;
+    done_ = new Chan();
     async _mysqld() {
         log.info("run mariadbd");
         const p = Deno.run({
@@ -3397,6 +3571,7 @@ class Service {
             throw e;
         } finally{
             p.close();
+            this.done_.close();
         }
     }
     async _prepare() {
@@ -3404,7 +3579,9 @@ class Service {
         if (opts.serverID > 0n) {
             await writeServerID(opts.serverID);
         }
-        if (opts.master != "") {}
+        if (opts.master != "") {
+            await cloneDB(opts.master, opts.masterNcat);
+        }
     }
     async _setting() {
         const opts = this.opts;
@@ -3413,7 +3590,9 @@ class Service {
             if (opts.slave != "" && opts.slavePassword != "") {
                 await createSlave(opts.root, opts.rootPassword, opts.slave, opts.slavePassword);
             }
-        } else {}
+        } else {
+            await startSlave(opts.master, opts.root, opts.rootPassword);
+        }
     }
 }
 const root = new Command({

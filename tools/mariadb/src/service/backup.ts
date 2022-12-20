@@ -172,6 +172,17 @@ export class Backup {
 
     await this.delete();
   }
+  async complete() {
+    const targets = this.targets_;
+    if (targets.length == 0) {
+      return;
+    }
+    const target = targets[targets.length - 1];
+    if (target.completed) {
+      return;
+    }
+    await target.complete();
+  }
 }
 
 class Target {
@@ -303,6 +314,19 @@ class Target {
       name: name,
       checkpoints: checkpoints,
     });
+  }
+  async complete() {
+    if (this.completed) {
+      throw new Error(`target already completed: ${this.path}`);
+    }
+    // 記錄完成
+    const f = await Deno.open(joinPath(this.path, TagCompleted), {
+      mode: 0o664,
+      create: true,
+      write: true,
+    });
+    f.close();
+    this.completed = true;
   }
 }
 export interface History {

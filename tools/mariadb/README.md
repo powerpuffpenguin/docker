@@ -59,9 +59,63 @@ MYSQL_SLAVE_PASSWORD=456
 前4個是 mariadb 容器使用的變量，和原容器中含義相同，MYSQL\_SLAVE\_NAME 和 MYSQL\_SLAVE\_PASSWORD
 將指定一個用於主從同步的用戶名以及密碼，腳本將自動創建這個用戶並使用它來進行主從同步。
 
-如果你只向使用自動備份功能則可以不指定 MYSQL\_SLAVE\_NAME 與 MYSQL\_SLAVE\_PASSWORD 變量
+如果你只想使用自動備份功能則可以不指定 MYSQL\_SLAVE\_NAME 與 MYSQL\_SLAVE\_PASSWORD 變量
 
-| 變量       | 含義                                     |
-| ---------- | ---------------------------------------- |
-| SERVER\_ID | 在 server-id.cnf 中設置 服務器 id        |
-| NCAT\_PORT | 使用 ncat 監聽指定端口用於複製數據庫內容 |
+| 變量         | 含義                                                |
+| ------------ | --------------------------------------------------- |
+| SERVER\_ID   | 在 server-id.cnf 中設置 服務器 id                   |
+| NCAT\_PORT   | 使用 ncat 監聽指定端口用於複製數據庫內容            |
+| MASTER\_ADDR | 設置 master 地址，一旦設置此值容器將作爲 salve 運行 |
+| MASTER\_NCAT | 設置 master ncat 端口，默認 3307                    |
+
+```
+services:
+  master:
+    image: "${DB_IMAGE}"
+    restart: always
+    env_file:
+      - ./conf/db.env
+    environment:
+      - TZ=Asia/Shanghai
+      - SERVER_ID=1
+      - NCAT_PORT=3307
+    volumes:
+      - ./conf/main.js:/main.js:ro
+      - ./conf/master.cnf:/etc/mysql/conf.d/master.cnf:ro
+      - ${DATA_PATH}/master:/var/lib/mysql
+    command: ["deno","run","-A","main.js"]
+  slave:
+    image: "${DB_IMAGE}"
+    restart: always
+    env_file:
+      - ./conf/db.env
+    environment:
+      - TZ=Asia/Shanghai
+      - SERVER_ID=100
+      - MASTER_ADDR=master
+      - MASTER_NCAT=3307
+    volumes:
+      - ./conf/main.js:/main.js:ro
+      - ./conf/slave.cnf:/etc/mysql/conf.d/slave.cnf:ro
+      - ${DATA_PATH}/slave:/var/lib/mysql
+    command: ["deno","run","-A","main.js"]
+  backup:
+    image: "${DB_IMAGE}"
+    restart: always
+    env_file:
+      - ./conf/db.env
+    environment:
+      - TZ=Asia/Shanghai
+      - SERVER_ID=200
+      - MASTER_ADDR=master
+      - MASTER_NCAT=3307
+
+      - BACKUP_FULL=3
+      - BACKUP_INC=30
+    volumes:
+      - ./conf/main.js:/main.js:ro
+      - ./conf/slave.cnf:/etc/mysql/conf.d/slave.cnf:ro
+      - ${DATA_PATH}/backup:/var/lib/mysql
+      - ${DB_BACKUP}:/backup
+    command: ["deno","run","-A","main.js"]
+```

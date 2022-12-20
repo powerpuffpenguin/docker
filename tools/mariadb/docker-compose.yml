@@ -13,15 +13,37 @@ services:
       - ./conf/master.cnf:/etc/mysql/conf.d/master.cnf:ro
       - ${DATA_PATH}/master:/var/lib/mysql
     command: ["deno","run","-A","main.js"]
-  # backup:
-  #   image: "${DB_IMAGE}"
-  #   restart: always
-  #   env_file:
-  #     - ./conf/db.env
-  #   environment:
-  #     - TZ=Asia/Shanghai
-  #   volumes:
-  #     - ./conf/main.js:/main.js:ro
-  #     - ./conf/slave.cnf:/etc/mysql/conf.d/slave.cnf:ro
-  #     - ${DATA_PATH}/backup:/var/lib/mysql
-  #   command: ["deno","run","-A","main.js","slave","-m=db-master","--id=100","-b=0 1 * * *"]
+  slave:
+    image: "${DB_IMAGE}"
+    restart: always
+    env_file:
+      - ./conf/db.env
+    environment:
+      - TZ=Asia/Shanghai
+      - SERVER_ID=100
+      - MASTER_ADDR=master
+      - MASTER_NCAT=3307
+    volumes:
+      - ./conf/main.js:/main.js:ro
+      - ./conf/slave.cnf:/etc/mysql/conf.d/slave.cnf:ro
+      - ${DATA_PATH}/slave:/var/lib/mysql
+    command: ["deno","run","-A","main.js"]
+  backup:
+    image: "${DB_IMAGE}"
+    restart: always
+    env_file:
+      - ./conf/db.env
+    environment:
+      - TZ=Asia/Shanghai
+      - SERVER_ID=200
+      - MASTER_ADDR=master
+      - MASTER_NCAT=3307
+
+      - BACKUP_FULL=3
+      - BACKUP_INC=30
+    volumes:
+      - ./conf/main.js:/main.js:ro
+      - ./conf/slave.cnf:/etc/mysql/conf.d/slave.cnf:ro
+      - ${DATA_PATH}/backup:/var/lib/mysql
+      - ${DB_BACKUP}:/backup
+    command: ["deno","run","-A","main.js"]
