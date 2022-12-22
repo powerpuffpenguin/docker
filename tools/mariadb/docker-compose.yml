@@ -41,6 +41,7 @@ services:
 
       - BACKUP_FULL=3
       - BACKUP_INC=30
+      - BACKUP_CRON=0 1 * * *
     volumes:
       - ./conf/main.js:/main.js:ro
       - ./conf/slave.cnf:/etc/mysql/conf.d/slave.cnf:ro

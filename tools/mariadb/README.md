@@ -67,6 +67,7 @@ MYSQL_SLAVE_PASSWORD=456
 | NCAT\_PORT   | 使用 ncat 監聽指定端口用於複製數據庫內容            |
 | MASTER\_ADDR | 設置 master 地址，一旦設置此值容器將作爲 salve 運行 |
 | MASTER\_NCAT | 設置 master ncat 端口，默認 3307                    |
+| BACKUP\_CRON | 何時執行備份                                        |
 
 ```
 services:
@@ -112,6 +113,7 @@ services:
 
       - BACKUP_FULL=3
       - BACKUP_INC=30
+      - BACKUP_CRON=0 1 * * *
     volumes:
       - ./conf/main.js:/main.js:ro
       - ./conf/slave.cnf:/etc/mysql/conf.d/slave.cnf:ro

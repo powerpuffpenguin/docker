@@ -4,7 +4,6 @@ import {
   cloneDB,
   createSlave,
   ncat,
-  runProcess,
   startSlave,
   waitMysqld,
   watchSlave,
