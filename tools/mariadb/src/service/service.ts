@@ -161,9 +161,14 @@ export class Service {
       this.process_ = undefined;
       p.kill();
       await this.done_.wait();
-
-      const backup = await this.backup();
-      await backup.complete();
+      try {
+        const backup = await this.backup();
+        await backup.complete();
+      } catch (e) {
+        if (!(e instanceof Deno.errors.NotFound)) {
+          throw e;
+        }
+      }
 
       // 記錄錯誤
       const f = await Deno.open("/var/lib/mysql/slave_error", {

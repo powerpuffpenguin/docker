@@ -3504,8 +3504,14 @@ class Service {
             this.process_ = undefined;
             p.kill();
             await this.done_.wait();
-            const backup1 = await this.backup();
-            await backup1.complete();
+            try {
+                const backup1 = await this.backup();
+                await backup1.complete();
+            } catch (e) {
+                if (!(e instanceof Deno.errors.NotFound)) {
+                    throw e;
+                }
+            }
             const f = await Deno.open("/var/lib/mysql/slave_error", {
                 mode: 0o664,
                 create: true,
